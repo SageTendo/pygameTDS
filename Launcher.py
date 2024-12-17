@@ -95,6 +95,44 @@ upgrade_options = [
     "a Random Weapon"
 ]
 
+class SplashScreen:
+    def __init__(self, screen, logo_path):
+        self.screen = screen
+        self.logo = pygame.image.load(logo_path).convert_alpha()
+        self.logo = pygame.transform.scale(self.logo, (400, 400))  # Adjust size as needed
+        self.alpha = 0
+        self.fade_speed = 2
+        self.state = 'fade_in'
+        self.wait_time = 10000  # Time to show at full opacity in milliseconds
+        self.wait_start = 10
+        
+    def update(self):
+        if self.state == 'fade_in':
+            self.alpha = min(255, self.alpha + self.fade_speed)
+            if self.alpha >= 255:
+                self.state = 'wait'
+                self.wait_start = pygame.time.get_ticks()
+        elif self.state == 'wait':
+            if pygame.time.get_ticks() - self.wait_start > self.wait_time:
+                self.state = 'fade_out'
+        elif self.state == 'fade_out':
+            self.alpha = max(0, self.alpha - self.fade_speed)
+            
+        return self.alpha > 0
+        
+    def draw(self):
+        # Center the logo
+        logo_rect = self.logo.get_rect(center=(self.screen.get_width()//2, self.screen.get_height()//2))
+        
+        # Create a copy of the logo for alpha changes
+        logo_surface = self.logo.copy()
+        logo_surface.set_alpha(self.alpha)
+        
+        # Fill screen with black
+        self.screen.fill((0, 0, 0))
+        
+        # Draw logo
+        self.screen.blit(logo_surface, logo_rect)
 
 class EnergyOrb(pygame.sprite.Sprite):
     """Represents an energy orb that the player can collect."""
@@ -1045,6 +1083,7 @@ version_font = pygame.font.Font(BASE_DIR / 'fonts/ps2.ttf', 15)
 screen = pygame.display.set_mode((constants['WIDTH'], constants['HEIGHT']))
 pygame.display.set_caption("TBBP Game")
 
+
 player_image = pygame.image.load(BASE_DIR / 'images/player.png').convert_alpha()
 player_mask = pygame.mask.from_surface(player_image)
 zombie_images = [
@@ -1098,7 +1137,8 @@ cursor_rect = CURSOR_IMG.get_rect()
 pygame.mouse.set_visible(False)
 render_upgrade_panel()
 running = True
-game_state = 'main_menu'
+splash = SplashScreen(screen, BASE_DIR / 'images/logo.png')
+game_state = 'splash'
 selected_weapon = 'Glock(PDW)'
 all_weapon_names = []
 for category in weapon_categories:
@@ -1122,6 +1162,20 @@ while running:
     dt = clock.tick(constants['FPS']) / 1000.0
     current_time = pygame.time.get_ticks()
     time_since_last_shot = current_time - last_fired_time[player.current_weapon.name]
+    
+    if game_state == 'splash':
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+                
+        if splash.update():
+            splash.draw()
+        else:
+            game_state = 'main_menu'
+            
+        pygame.display.flip()
+        clock.tick(constants['FPS'])
+        continue
 
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
