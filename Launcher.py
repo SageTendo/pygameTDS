@@ -11,39 +11,6 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 else:
     BASE_DIR = Path(__file__).parent
 
-level_thresholds = {
-    1: 0,
-    2: 90,
-    3: 180,
-    4: 280,
-    5: 390,
-    6: 515,
-    7: 655,
-    8: 810,
-    9: 980,
-    10: 1170,
-    11: 1380,
-    12: 1615,
-    13: 1875,
-    14: 2155,
-    15: 2465,
-    16: 2805,
-    17: 3175,
-    18: 3580,
-    19: 4020,
-    20: 4500,
-    21: 5025,
-    22: 5600,
-    23: 6225,
-    24: 6905,
-    25: 7645,
-    26: 8450,
-    27: 9325,
-    28: 10275,
-    29: 11305,
-    30: 12425
-}
-
 constants = {
     'WIDTH': 1920,
     'HEIGHT': 1080,
@@ -70,8 +37,9 @@ constants = {
     'ZOMBIE_MIN_SPAWN_DISTANCE': 150,
     'ZOMBIE_AVOIDANCE_RADIUS': 5,
     'WAVE_DELAY': 10000,
-    'VIRTUAL_WIDTH': 2020,
-    'VIRTUAL_HEIGHT': 1180,
+    'VIRTUAL_WIDTH': 1920,
+    'VIRTUAL_HEIGHT': 1080,
+    'TILE_SIZE': 16,  # Add this line
 }
 
 constants.update({
@@ -80,7 +48,13 @@ constants.update({
         (255, 128, 0),
         (255, 255, 0),
         (0, 255, 0),
-    ]
+    ],
+    'MAP_TILES': {
+        'GRASS': (96, 144, 120),
+        'DIRT': (139, 69, 19),
+        'SAND': (194, 178, 128),
+        'STONE': (169, 169, 169)
+    }
 })
 
 upgrade_options = [
@@ -94,6 +68,73 @@ upgrade_options = [
     "Increase XP Gain",
     "a Random Weapon"
 ]
+
+class Map:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.tiles = []
+        self.generate_map()
+    
+    def generate_map(self):
+        pattern_width = 32
+        pattern_height = 32
+        base_pattern = []
+        road_width = 3
+        
+        # Generate base terrain
+        for y in range(pattern_height):
+            row = []
+            for x in range(pattern_width):
+                # Create horizontal and vertical roads
+                if (x in range(pattern_width//2 - road_width, pattern_width//2 + road_width) or 
+                    y in range(pattern_height//2 - road_width, pattern_height//2 + road_width)):
+                    tile_type = 'STONE'
+                else:
+                    tile_type = random.choices(
+                        list(constants['MAP_TILES'].keys()),
+                        weights=[0.6, 0.2, 0.2, 0]
+                    )[0]
+                row.append(tile_type)
+            base_pattern.append(row)
+        
+        # Repeat the pattern
+        for y in range(self.height):
+            row = []
+            for x in range(self.width):
+                pattern_x = x % pattern_width
+                pattern_y = y % pattern_height
+                row.append(base_pattern[pattern_y][pattern_x])
+            self.tiles.append(row)
+    
+    def draw(self, screen, camera):
+        tile_size = constants['TILE_SIZE']
+        
+        # Calculate visible area including wrap-around
+        view_x = camera.rect.x % (self.width * tile_size)
+        view_y = camera.rect.y % (self.height * tile_size)
+        
+        for y in range(-1, constants['HEIGHT'] // tile_size + 2):
+            for x in range(-1, constants['WIDTH'] // tile_size + 2):
+                world_x = (x * tile_size + view_x) % (self.width * tile_size)
+                world_y = (y * tile_size + view_y) % (self.height * tile_size)
+                
+                tile_x = int(world_x // tile_size)
+                tile_y = int(world_y // tile_size)
+                
+                tile_type = self.tiles[tile_y][tile_x]
+                tile_color = constants['MAP_TILES'][tile_type]
+                
+                screen_x = x * tile_size - (view_x % tile_size)
+                screen_y = y * tile_size - (view_y % tile_size)
+                
+                pygame.draw.rect(screen, tile_color, (screen_x, screen_y, tile_size, tile_size))
+
+def generate_thresholds(max_level: int, base: int = 90, multiplier: float = 1.35) -> dict[int, int]:
+    return {level: int(base * (multiplier ** (level-2))) if level > 1 else 0 
+            for level in range(1, max_level + 1)}
+
+level_thresholds = generate_thresholds(max_level=30, base=150, multiplier=1.35)
 
 class SplashScreen:
     def __init__(self, screen, logo_path):
@@ -228,29 +269,20 @@ class WeaponCategory:
         return any(not weapon.locked for weapon in self.weapons)
 
 class Camera:
-    """Manages the camera's position and movement."""
     def __init__(self, width, height):
         self.rect = pygame.Rect(0, 0, width, height)
         self.width = width
         self.height = height
 
     def apply(self, entity):
-        """Applies the camera's offset to an entity's position."""
         if isinstance(entity, pygame.Rect):
-            return entity.move(self.rect.topleft)
-        return entity.rect.move(self.rect.topleft)
+            return entity.move(-self.rect.x, -self.rect.y)
+        return entity.rect.move(-self.rect.x, -self.rect.y)
 
     def update(self, target):
-        """Updates the camera's position to follow the target."""
-        x = -target.rect.centerx + int(constants['WIDTH'] / 2)
-        y = -target.rect.centery + int(constants['HEIGHT'] / 2)
-
-        x = min(0, x)  
-        y = min(0, y)
-        x = max(-(constants['VIRTUAL_WIDTH'] - constants['WIDTH']), x)
-        y = max(-(constants['VIRTUAL_HEIGHT'] - constants['HEIGHT']), y)
-
-        self.rect.topleft = (x, y)
+        # Keep camera centered on player at all times
+        self.rect.x = target.rect.centerx - self.width // 2
+        self.rect.y = target.rect.centery - self.height // 2
 
 class MuzzleFlash(pygame.sprite.Sprite):
     """Represents a muzzle flash effect when the player fires a weapon."""
@@ -340,7 +372,6 @@ class Player(pygame.sprite.Sprite):
             self.current_weapon = new_weapon
 
     def update(self, keys, mouse_pos):
-        """Updates the player's position and rotation."""
         self.dx, self.dy = 0, 0
         if keys[pygame.K_w]:
             self.dy -= self.speed
@@ -351,13 +382,9 @@ class Player(pygame.sprite.Sprite):
         if keys[pygame.K_d]:
             self.dx += self.speed
 
-        new_x = self.rect.x + self.dx
-        new_y = self.rect.y + self.dy
-
-        if 0 <= new_x < constants['VIRTUAL_WIDTH'] - self.rect.width:
-            self.rect.x = new_x
-        if 0 <= new_y < constants['VIRTUAL_HEIGHT'] - self.rect.height:
-            self.rect.y = new_y
+        # Add world wrapping
+        self.rect.x = (self.rect.x + self.dx) % constants['VIRTUAL_WIDTH']
+        self.rect.y = (self.rect.y + self.dy) % constants['VIRTUAL_HEIGHT']
 
         angle = math.atan2(mouse_pos[1] - self.rect.centery, mouse_pos[0] - self.rect.centerx)
         self.rotate(angle)
@@ -410,7 +437,7 @@ class Player(pygame.sprite.Sprite):
 
         while self.xp >= level_thresholds[self.level + 1]:
             self.level += 1
-            self.xp -= level_thresholds[self.level]
+            self.xp -= level_thresholds[player.level]
             show_upgrade_panel = True
 
 
@@ -433,7 +460,8 @@ class Projectile(pygame.sprite.Sprite):
     def update(self):
         self.rect.x += self.dx
         self.rect.y += self.dy
-        if not pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT']).colliderect(self.rect):
+        # Remove boundary check to let bullets travel freely
+        if self.penetration <= 0:
             self.kill()
         else:
             for zombie in zombies:
@@ -529,6 +557,8 @@ class Zombie(pygame.sprite.Sprite):
         return random.randint(0, constants['VIRTUAL_WIDTH']), random.randint(0, constants['VIRTUAL_HEIGHT'])
     
     def update(self):
+        self.rect.x = self.rect.x % constants['VIRTUAL_WIDTH']
+        self.rect.y = self.rect.y % constants['VIRTUAL_HEIGHT']
         self.last_damage_time = pygame.time.get_ticks()
         self.flash()
         if self.fading:
@@ -552,7 +582,6 @@ class Zombie(pygame.sprite.Sprite):
                     self.path.pop(0)
 
         self.avoid_other_zombies()
-        self.check_boundaries()
         self.rotate_to_target()
         self.hitbox.center = self.rect.center
 
@@ -630,7 +659,9 @@ class Zombie(pygame.sprite.Sprite):
             self.rect.y += avoidance_force.y
 
     def check_boundaries(self):
-        self.rect.clamp_ip(pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT']))
+        # Instead of clamping to boundaries, wrap around the world
+        self.rect.x = self.rect.x % constants['VIRTUAL_WIDTH']
+        self.rect.y = self.rect.y % constants['VIRTUAL_HEIGHT']
 
     def rotate_to_target(self):
         if self.path:
@@ -1030,7 +1061,7 @@ def set_initial_weapon(self):
 
 def get_adjusted_mouse_pos(camera):
     mouse_pos = pygame.mouse.get_pos()
-    return (mouse_pos[0] - camera.rect.x, mouse_pos[1] - camera.rect.y)
+    return (mouse_pos[0] + camera.rect.x, mouse_pos[1] + camera.rect.y)
 
 
 def create_projectile(pellet_angle):
@@ -1071,7 +1102,6 @@ weapon_categories = [pistol, smg, bolt_action, assault_rifles, lmgs, shotguns, l
 
 pygame.init()
 
-
 font1 = pygame.font.Font(BASE_DIR / 'fonts/ps2.ttf', 15)
 font = pygame.font.Font(BASE_DIR / 'fonts/ps2.ttf', 15)
 scorefont = pygame.font.Font(BASE_DIR / 'fonts/ps2.ttf', 20)
@@ -1081,6 +1111,11 @@ weapon_font = pygame.font.Font(BASE_DIR / 'fonts/ps2.ttf', 17)
 version_font = pygame.font.Font(BASE_DIR / 'fonts/ps2.ttf', 15)
 
 screen = pygame.display.set_mode((constants['WIDTH'], constants['HEIGHT']))
+
+# Load the icon image
+icon_image = pygame.image.load(BASE_DIR / 'images/zombie1.png').convert_alpha()  # Make sure to replace with your icon image path
+pygame.display.set_icon(icon_image)  # Set the window icon
+
 pygame.display.set_caption("TBBP Game")
 
 
@@ -1089,7 +1124,7 @@ player_mask = pygame.mask.from_surface(player_image)
 zombie_images = [
     pygame.image.load(BASE_DIR / f'images/zombie{i}.png').convert_alpha() for i in range(1, 12)
 ]
-background_image = pygame.image.load(BASE_DIR / 'images/zombies.png').convert()
+
 chest_image = pygame.image.load(BASE_DIR / 'images/chest.png').convert_alpha()
 orb_image = pygame.image.load(BASE_DIR / 'images/orb.png').convert_alpha()
 orb_image = pygame.transform.scale(orb_image, (20, 20))
@@ -1117,6 +1152,9 @@ floating_texts = pygame.sprite.Group()
 energy_orbs = pygame.sprite.Group()
 all_zombies_group = pygame.sprite.Group()
 muzzle_flashes = pygame.sprite.Group()
+
+game_map = Map(constants['VIRTUAL_WIDTH'] // constants['TILE_SIZE'], 
+               constants['VIRTUAL_HEIGHT'] // constants['TILE_SIZE'])
 
 fps_color = constants['GAMMA']
 clock = pygame.time.Clock()
@@ -1272,12 +1310,7 @@ while running:
             # Draw the game world first
             bg_x = -camera.rect.x
             bg_y = -camera.rect.y
-            scaled_background = pygame.transform.scale(background_image, (constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT']))
-            screen_rect = pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT'])
-            image_rect = scaled_background.get_rect()
-            image_rect.topleft = (bg_x, bg_y)
-            cropped_image = scaled_background.subsurface(screen_rect.clip(image_rect))
-            screen.blit(cropped_image, (0, 0))
+            game_map.draw(screen, camera)
             
             # Then render all game elements
             for sprite in all_sprites:
@@ -1387,15 +1420,7 @@ while running:
                     if projectile.penetration <= 0:
                         projectile.kill()
 
-        bg_x = -camera.rect.x
-        bg_y = -camera.rect.y
-        scaled_background = pygame.transform.scale(background_image, (constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT']))
-        screen_rect = pygame.Rect(0, 0, constants['VIRTUAL_WIDTH'], constants['VIRTUAL_HEIGHT'])
-        image_rect = scaled_background.get_rect()
-        image_rect.topleft = (bg_x, bg_y)
-        cropped_image = scaled_background.subsurface(screen_rect.clip(image_rect))
-        screen.blit(cropped_image, (0, 0))
-        screen.blit(CURSOR_IMG, cursor_rect)
+        game_map.draw(screen, camera)
 
         progress = player.xp / level_thresholds[player.level + 1]
         draw_progress_bar(screen, 10, constants['HEIGHT'] - 30, constants['WIDTH'] - 20, 20, progress, constants['RED'])
