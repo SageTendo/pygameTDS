@@ -362,8 +362,6 @@ class Player(pygame.sprite.Sprite):
         angle = math.atan2(mouse_pos[1] - self.rect.centery, mouse_pos[0] - self.rect.centerx)
         self.rotate(angle)
 
-        print(f"dx: {self.dx}, dy: {self.dy}")
-
     def rotate(self, angle):
         """Rotates the player's image."""
         self.image = pygame.transform.rotate(self.original_image, -math.degrees(angle))
@@ -1157,6 +1155,7 @@ auto_firing = False
 show_upgrade_panel = False
 
 while running:
+    mouse_pos = pygame.mouse.get_pos()
     adjusted_mouse_pos = get_adjusted_mouse_pos(camera)
     keys = pygame.key.get_pressed()
     dt = clock.tick(constants['FPS']) / 1000.0
@@ -1187,27 +1186,25 @@ while running:
                 auto_firing = not auto_firing
                 print("Auto-firing mode enabled" if auto_firing else "Auto-firing mode disabled")
             elif event.button == 1 and show_upgrade_panel:
-                mouse_pos = pygame.mouse.get_pos()
-                
-                panel_width = 1600
-                panel_height = 900
-                panel_x = (1920 - panel_width) // 2
-                panel_y = (1080 - panel_height) // 2
-                
-                option_width = 450
-                option_height = 200
+                panel_width = 900
+                panel_height = 450
+                panel_x_offset = (1920 - panel_width) // 2
+                panel_y_offset = (1080 - panel_height) // 2
+
+                option_width = 250
+                option_height = 100
                 options_per_row = 3
-                horizontal_padding = 50
-                vertical_padding = 50
-                
+
                 for i, option in enumerate(upgrade_options):
                     row = i // options_per_row
                     col = i % options_per_row
-                    
-                    x = panel_x + col * (option_width + horizontal_padding) + horizontal_padding
-                    y = panel_y + row * (option_height + vertical_padding) + vertical_padding
-                    
-                    if pygame.Rect(x, y, option_width, option_height).collidepoint(mouse_pos):
+
+                    x = panel_x_offset + (300 * col) + 25
+                    y = panel_y_offset + (150 * row)
+
+                    if pygame.Rect(x, y, option_width, option_height).collidepoint(
+                            mouse_pos
+                    ):
                         apply_upgrade(i)
                         show_upgrade_panel = False
                         break
